@@ -29,16 +29,34 @@ export interface AiResult {
   media: UploadedMedia[];
 }
 
+interface ManualSlide {
+  kicker: string;
+  headline: string;
+  body: string;
+}
+
+const EMPTY_SLIDE: ManualSlide = { kicker: "", headline: "", body: "" };
+
 export function AiPanel({
   selectedPlatforms,
+  aiEnabled,
   onResult,
 }: {
   selectedPlatforms: Platform[];
+  /** False when no API key is configured — the manual designer still works. */
+  aiEnabled: boolean;
   onResult: (result: AiResult) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [brief, setBrief] = useState("");
-  const [mode, setMode] = useState<"post" | "carousel">("post");
+  const [mode, setMode] = useState<"post" | "carousel" | "manual">(
+    aiEnabled ? "post" : "manual",
+  );
+  const [manualSlides, setManualSlides] = useState<ManualSlide[]>([
+    { ...EMPTY_SLIDE },
+    { ...EMPTY_SLIDE },
+    { ...EMPTY_SLIDE },
+  ]);
   const [slideCount, setSlideCount] = useState(6);
   const [template, setTemplate] = useState<string>("bold");
   const [busy, setBusy] = useState(false);
@@ -47,7 +65,59 @@ export function AiPanel({
 
   const platforms = selectedPlatforms.length > 0 ? selectedPlatforms : [Platform.INSTAGRAM];
 
+  /**
+   * Renders slides the user wrote. No API key, no token cost — the designer is
+   * useful on its own to anyone willing to write their own copy.
+   */
+  async function renderManual() {
+    const slides = manualSlides
+      .filter((slide) => slide.headline.trim())
+      .map((slide) => ({
+        kicker: slide.kicker.trim() || null,
+        headline: slide.headline.trim(),
+        body: slide.body.trim() || null,
+      }));
+
+    if (slides.length === 0) {
+      setError("צריך לפחות שקופית אחת עם כותרת");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setStatus("מעצב את השקופיות…");
+
+    try {
+      const response = await fetch("/api/carousel/render", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slides, template }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "העיצוב נכשל");
+
+      onResult({
+        format: PostFormat.CAROUSEL,
+        title: slides[0]!.headline,
+        contentPillar: "",
+        caption: "",
+        hashtags: [],
+        perPlatform: {},
+        media: body.media,
+      });
+      setStatus(null);
+      setOpen(false);
+    } catch (caught) {
+      setError((caught as Error).message);
+      setStatus(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function generate() {
+    if (mode === "manual") return renderManual();
+
     if (!brief.trim()) {
       setError("צריך לכתוב על מה הפוסט");
       return;
@@ -91,7 +161,7 @@ export function AiPanel({
         className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-brand/50 bg-brand-soft px-4 py-4 text-sm font-medium text-brand hover:bg-brand/10"
       >
         <Sparkles className="size-4" aria-hidden />
-        לכתוב את הפוסט עם AI
+        {aiEnabled ? "לכתוב את הפוסט עם AI" : "לעצב קרוסלה"}
       </button>
     );
   }
@@ -103,13 +173,16 @@ export function AiPanel({
         <h2 className="text-base font-semibold text-ink">יצירת תוכן</h2>
       </div>
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         {(
           [
-            ["post", "פוסט"],
-            ["carousel", "קרוסלה"],
+            ["post", "פוסט", true],
+            ["carousel", "קרוסלה", true],
+            ["manual", "קרוסלה — טקסט שלי (חינם)", false],
           ] as const
-        ).map(([value, label]) => (
+        )
+          .filter(([, , needsAi]) => aiEnabled || !needsAi)
+          .map(([value, label]) => (
           <button
             key={value}
             type="button"
@@ -125,6 +198,17 @@ export function AiPanel({
         ))}
       </div>
 
+      {mode === "manual" && (
+        <div className="mb-4">
+          <Alert tone="info">
+            כאן אתה כותב את הטקסט והמערכת מעצבת אותו לשקופיות. לא נדרש מפתח API
+            ואין שום עלות.
+          </Alert>
+        </div>
+      )}
+
+      {mode !== "manual" && (
+      <>
       <label htmlFor="brief" className="mb-1 block text-sm font-medium text-ink">
         על מה הפוסט?
       </label>
@@ -140,23 +224,95 @@ export function AiPanel({
         placeholder="למשל: טיפים לזוגות שגרים יחד בפעם הראשונה"
         className="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
       />
+      </>
+      )}
 
-      {mode === "carousel" && (
+      {mode === "manual" && (
+        <div className="space-y-4">
+          {manualSlides.map((slide, index) => (
+            <div key={index} className="rounded-lg border border-border-subtle p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-medium text-ink">שקופית {index + 1}</span>
+                {manualSlides.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setManualSlides((slides) => slides.filter((_, i) => i !== index))
+                    }
+                    className="text-xs text-ink-muted hover:text-danger"
+                  >
+                    הסרה
+                  </button>
+                )}
+              </div>
+
+              <input
+                value={slide.kicker}
+                onChange={(e) =>
+                  setManualSlides((slides) =>
+                    slides.map((s, i) => (i === index ? { ...s, kicker: e.target.value } : s)),
+                  )
+                }
+                placeholder="מילה קטנה מעל הכותרת (אופציונלי)"
+                maxLength={20}
+                className="mb-2 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+              <input
+                value={slide.headline}
+                onChange={(e) =>
+                  setManualSlides((slides) =>
+                    slides.map((s, i) => (i === index ? { ...s, headline: e.target.value } : s)),
+                  )
+                }
+                placeholder="הכותרת — קצרה ככל האפשר"
+                maxLength={80}
+                className="mb-2 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm font-medium text-ink outline-none focus:border-brand"
+              />
+              <textarea
+                value={slide.body}
+                onChange={(e) =>
+                  setManualSlides((slides) =>
+                    slides.map((s, i) => (i === index ? { ...s, body: e.target.value } : s)),
+                  )
+                }
+                placeholder="משפט הסבר (אופציונלי)"
+                maxLength={200}
+                rows={2}
+                className="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+            </div>
+          ))}
+
+          {manualSlides.length < 10 && (
+            <button
+              type="button"
+              onClick={() => setManualSlides((slides) => [...slides, { ...EMPTY_SLIDE }])}
+              className="w-full rounded-lg border border-dashed border-border-subtle px-4 py-2 text-sm text-ink-muted hover:border-brand hover:text-brand"
+            >
+              + שקופית
+            </button>
+          )}
+        </div>
+      )}
+
+      {(mode === "carousel" || mode === "manual") && (
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <div>
-            <label htmlFor="slides" className="mb-1 block text-sm font-medium text-ink">
-              מספר שקופיות
-            </label>
-            <input
-              id="slides"
-              type="number"
-              min={3}
-              max={10}
-              value={slideCount}
-              onChange={(e) => setSlideCount(Number(e.target.value))}
-              className="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
-            />
-          </div>
+          {mode === "carousel" && (
+            <div>
+              <label htmlFor="slides" className="mb-1 block text-sm font-medium text-ink">
+                מספר שקופיות
+              </label>
+              <input
+                id="slides"
+                type="number"
+                min={3}
+                max={10}
+                value={slideCount}
+                onChange={(e) => setSlideCount(Number(e.target.value))}
+                className="w-full rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand"
+              />
+            </div>
+          )}
           <div>
             <label className="mb-1 block text-sm font-medium text-ink">סגנון עיצוב</label>
             <div className="flex gap-1">
@@ -192,7 +348,7 @@ export function AiPanel({
           disabled={busy}
           className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
         >
-          {busy ? (status ?? "עובד…") : "צור"}
+          {busy ? (status ?? "עובד…") : mode === "manual" ? "עצב את השקופיות" : "צור"}
         </button>
         <button
           type="button"
@@ -202,7 +358,7 @@ export function AiPanel({
         >
           ביטול
         </button>
-        {mode === "carousel" && (
+        {mode !== "post" && (
           <span className="text-xs text-ink-muted">עיצוב השקופיות לוקח כחצי דקה</span>
         )}
       </div>

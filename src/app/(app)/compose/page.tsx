@@ -3,6 +3,7 @@ import { prisma } from "@/server/db";
 import { EmptyState } from "@/components/ui";
 import Link from "next/link";
 import { Composer } from "./composer";
+import { isAiConfigured } from "@/ai/client";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,7 @@ export default async function ComposePage() {
       </header>
 
       <Composer
+        aiEnabled={isAiConfigured()}
         accounts={accounts.map((a) => ({
           id: a.id,
           platform: a.platform,

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { BrandProfile } from "@prisma/client";
 import { prisma } from "@/server/db";
-import { CONTENT_MODEL, getClaude } from "./client";
+import { contentModel, getClaude } from "./client";
 import { PLATFORM_GUIDANCE, buildBrandSystemPrompt } from "./brand";
 
 /**
@@ -73,7 +73,7 @@ export async function generatePostDraft(options: GenerateOptions): Promise<PostD
     .join("\n");
 
   const response = await getClaude().messages.parse({
-    model: CONTENT_MODEL,
+    model: contentModel(),
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     // The brand prompt is identical on every call and the brief is not, so the
@@ -123,7 +123,7 @@ export async function generateCarousel(
   const slideCount = Math.min(Math.max(options.slideCount ?? 6, 3), 10);
 
   const response = await getClaude().messages.parse({
-    model: CONTENT_MODEL,
+    model: contentModel(),
     max_tokens: 16000,
     thinking: { type: "adaptive" },
     system: [
@@ -171,7 +171,7 @@ export async function generateIdeas(
   count = 5,
 ): Promise<Ideas> {
   const response = await getClaude().messages.parse({
-    model: CONTENT_MODEL,
+    model: contentModel(),
     max_tokens: 8000,
     thinking: { type: "adaptive" },
     system: [
@@ -220,7 +220,7 @@ async function recordGeneration(
         brandId,
         kind,
         brief,
-        model: CONTENT_MODEL,
+        model: contentModel(),
         output: output as object,
         inputTokens: usage?.input_tokens ?? null,
         outputTokens: usage?.output_tokens ?? null,

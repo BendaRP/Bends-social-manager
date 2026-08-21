@@ -20,6 +20,7 @@ const schema = z.object({
   META_GRAPH_VERSION: z.string().default("v23.0"),
 
   ANTHROPIC_API_KEY: z.string().default(""),
+  CONTENT_MODEL: z.string().default(""),
   /// Optional override for the Chromium used to render carousels.
   CHROMIUM_PATH: z.string().default(""),
 

@@ -37,7 +37,13 @@ const FORMATS: PostFormat[] = [
   PostFormat.TEXT,
 ];
 
-export function Composer({ accounts }: { accounts: AccountOption[] }) {
+export function Composer({
+  accounts,
+  aiEnabled,
+}: {
+  accounts: AccountOption[];
+  aiEnabled: boolean;
+}) {
   const router = useRouter();
 
   const [format, setFormat] = useState<PostFormat>(PostFormat.SINGLE_IMAGE);
@@ -147,6 +153,7 @@ export function Composer({ accounts }: { accounts: AccountOption[] }) {
     <form onSubmit={submit} className="space-y-5">
       <AiPanel
         selectedPlatforms={selectedAccounts.map((a) => a.platform)}
+        aiEnabled={aiEnabled}
         onResult={applyAiResult}
       />
 

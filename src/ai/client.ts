@@ -32,4 +32,14 @@ export function getClaude(): Anthropic {
   return client;
 }
 
-export const CONTENT_MODEL = "claude-opus-5";
+/**
+ * The model used for content generation.
+ *
+ * Configurable because the cost/quality trade-off is the owner's to make, not
+ * a default to impose. Opus 5 writes the best copy; Haiku 4.5 costs roughly a
+ * fifth as much and is a reasonable choice for high-volume drafting where
+ * every result gets edited anyway.
+ */
+export function contentModel(): string {
+  return getEnv().CONTENT_MODEL || "claude-opus-5";
+}
