@@ -218,12 +218,7 @@ async function configureHostedDatabases(reason) {
   if (existingRedis && !existingRedis.includes("localhost")) {
     ok("REDIS_URL כבר מוגדר לכתובת מרוחקת — משאיר אותו");
   } else {
-    const url = await askUntilValid(
-      "   הדבק כאן את כתובת ה-Redis: ",
-      (value) => value.startsWith("redis://") || value.startsWith("rediss://"),
-      "   הכתובת צריכה להתחיל ב-redis:// או ב-rediss://",
-    );
-    setEnvValue("REDIS_URL", url);
+    setEnvValue("REDIS_URL", await askForRedisUrl());
     ok("כתובת ה-Redis נשמרה");
   }
 
@@ -254,6 +249,66 @@ async function verifyConnections() {
     say("     לבדוק את הכתובת ב-.env ולהריץ שוב: npm run setup");
     process.exit(1);
   }
+}
+
+/**
+ * Collects the Redis URL, either whole or assembled from its parts.
+ *
+ * Hosted Redis passwords are random and regularly contain characters that are
+ * syntactically meaningful in a URL — an "@" in the password splits the
+ * authority section and the connection fails with an error that points at the
+ * host rather than the password. Building the URL here, with the password
+ * percent-encoded, removes a failure the user has no way to diagnose.
+ */
+async function askForRedisUrl() {
+  say();
+  say("   אפשר להדביק את הכתובת המלאה (מכפתור Connect בקונסולה של Redis),");
+  say("   או להקיש Enter כדי להרכיב אותה יחד משלושה שדות.");
+  say();
+
+  const pasted = (await rl.question("   כתובת מלאה, או Enter להרכבה: ")).trim();
+
+  if (pasted === "") return assembleRedisUrl();
+
+  if (/^rediss?:\/\//.test(pasted)) {
+    try {
+      new URL(pasted);
+      return pasted;
+    } catch {
+      warn("הכתובת לא תקינה — כנראה תו מיוחד בסיסמה. נרכיב אותה יחד.");
+      return assembleRedisUrl();
+    }
+  }
+
+  warn("זו לא כתובת redis://. נרכיב אותה יחד.");
+  return assembleRedisUrl();
+}
+
+async function assembleRedisUrl() {
+  say();
+  say("   בעמוד המסד ב-Redis Cloud:");
+  say("   • Public endpoint — נראה כמו  redis-19024.c55.eu-central-1.ec2.redns.redis-cloud.com:19024");
+  say("   • Password — מתחת ל-Security, מאחורי אייקון של עין");
+  say();
+
+  const endpoint = await askUntilValid(
+    "   Public endpoint (כתובת:פורט): ",
+    (value) => /^[^\s:]+:\d+$/.test(value.replace(/^rediss?:\/\//, "")),
+    "   צריך להיראות כמו  שם-השרת:מספר-פורט",
+  );
+
+  const username =
+    (await rl.question("   שם משתמש (Enter לברירת המחדל default): ")).trim() || "default";
+
+  const password = await askUntilValid(
+    "   סיסמה: ",
+    (value) => value.length > 0,
+    "   הסיסמה לא יכולה להיות ריקה",
+  );
+
+  const host = endpoint.replace(/^rediss?:\/\//, "");
+  // Percent-encoding is what makes a password containing @ / : or # safe here.
+  return `redis://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}`;
 }
 
 async function askUntilValid(prompt, isValid, hint) {
