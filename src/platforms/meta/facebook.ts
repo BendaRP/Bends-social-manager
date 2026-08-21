@@ -21,6 +21,7 @@ import {
   graphPost,
 } from "./client";
 import { metaScopes, metaScopeString } from "./scopes";
+import { exchangeMetaLogin, type MetaPage } from "./connect";
 import { composeCaption } from "./instagram";
 
 /**
@@ -54,45 +55,8 @@ export class FacebookAdapter implements PlatformAdapter {
   }
 
   async exchangeCode(code: string): Promise<ConnectedAccount[]> {
-    const env = getEnv();
-
-    const shortLived = await graphGet<{ access_token: string }>(
-      this.platform,
-      "oauth/access_token",
-      {
-        client_id: env.META_APP_ID,
-        client_secret: env.META_APP_SECRET,
-        redirect_uri: `${env.APP_URL}/api/auth/meta/callback`,
-        code,
-      },
-    );
-
-    const longLived = await exchangeForLongLivedToken(
-      this.platform,
-      shortLived.access_token,
-    );
-
-    const pages = await graphGet<{
-      data?: Array<{ id: string; name: string; access_token: string; picture?: { data?: { url?: string } } }>;
-    }>(this.platform, "me/accounts", {
-      fields: "id,name,access_token,picture{url}",
-      access_token: longLived.accessToken,
-      limit: "100",
-    });
-
-    return (pages.data ?? []).map((page) => ({
-      externalId: page.id,
-      username: null,
-      displayName: page.name,
-      avatarUrl: page.picture?.data?.url ?? null,
-      linkedPageId: page.id,
-      linkedPageName: page.name,
-      tokens: {
-        accessToken: page.access_token,
-        expiresAt: longLived.expiresAt,
-        scopes: metaScopes(),
-      },
-    }));
+    const { pages, expiresAt } = await exchangeMetaLogin(code);
+    return facebookAccountsFrom(pages, expiresAt);
   }
 
   async refreshTokens(tokens: TokenSet): Promise<TokenSet | null> {
@@ -360,4 +324,20 @@ export class FacebookAdapter implements PlatformAdapter {
       maxCaptionLength: 63206,
     };
   }
+}
+
+/** Maps a Meta login's pages to Facebook Page accounts. */
+export function facebookAccountsFrom(
+  pages: MetaPage[],
+  expiresAt: Date | null,
+): ConnectedAccount[] {
+  return pages.map((page) => ({
+    externalId: page.id,
+    username: null,
+    displayName: page.name,
+    avatarUrl: page.avatarUrl ?? null,
+    linkedPageId: page.id,
+    linkedPageName: page.name,
+    tokens: { accessToken: page.accessToken, expiresAt, scopes: metaScopes() },
+  }));
 }

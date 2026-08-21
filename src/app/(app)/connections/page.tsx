@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 export default async function ConnectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ success?: string; error?: string }>;
+  searchParams: Promise<{ success?: string; error?: string; warning?: string }>;
 }) {
   const params = await searchParams;
   const env = getEnv();
@@ -30,6 +30,11 @@ export default async function ConnectionsPage({
       </header>
 
       {params.success && <Alert tone="success">{params.success}</Alert>}
+      {params.warning && (
+        <Alert tone="warning" title="חובר, עם הערה">
+          {params.warning}
+        </Alert>
+      )}
       {params.error && <Alert tone="danger" title="החיבור נכשל">{params.error}</Alert>}
 
       <Card>

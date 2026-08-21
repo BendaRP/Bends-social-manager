@@ -22,6 +22,7 @@ import {
   waitForContainer,
 } from "./client";
 import { metaScopes, metaScopeString } from "./scopes";
+import { exchangeMetaLogin, type MetaPage } from "./connect";
 
 /**
  * Instagram Business/Creator publishing via the Meta Graph API.
@@ -56,67 +57,13 @@ export class InstagramAdapter implements PlatformAdapter {
   /**
    * Returns every Instagram account reachable through the user's pages.
    *
-   * A single Facebook login can administer several pages, so this yields a list
-   * and the UI asks which to connect rather than guessing.
+   * A login with pages but no linked Instagram account returns an empty list
+   * rather than throwing: the Facebook Pages from that same login are still
+   * usable, and failing here would throw them away too.
    */
   async exchangeCode(code: string): Promise<ConnectedAccount[]> {
-    const env = getEnv();
-
-    const shortLived = await graphGet<{ access_token: string }>(
-      this.platform,
-      "oauth/access_token",
-      {
-        client_id: env.META_APP_ID,
-        client_secret: env.META_APP_SECRET,
-        redirect_uri: `${env.APP_URL}/api/auth/meta/callback`,
-        code,
-      },
-    );
-
-    const longLived = await exchangeForLongLivedToken(
-      this.platform,
-      shortLived.access_token,
-    );
-
-    const pages = await graphGet<PagesResponse>(this.platform, "me/accounts", {
-      fields:
-        "id,name,access_token,instagram_business_account{id,username,name,profile_picture_url}",
-      access_token: longLived.accessToken,
-      limit: "100",
-    });
-
-    const accounts: ConnectedAccount[] = [];
-    for (const page of pages.data ?? []) {
-      const ig = page.instagram_business_account;
-      if (!ig) continue; // Page with no linked Instagram professional account.
-
-      accounts.push({
-        externalId: ig.id,
-        username: ig.username ?? null,
-        displayName: ig.name ?? null,
-        avatarUrl: ig.profile_picture_url ?? null,
-        linkedPageId: page.id,
-        linkedPageName: page.name,
-        tokens: {
-          // Page tokens derived from a long-lived user token do not expire on
-          // their own, but they die with the user token, so the expiry is
-          // tracked and refreshed on the user token's schedule.
-          accessToken: page.access_token,
-          expiresAt: longLived.expiresAt,
-          scopes: metaScopes(),
-        },
-      });
-    }
-
-    if (accounts.length === 0) {
-      throw new PlatformError(
-        "No Instagram professional account is linked to any Facebook Page on this login. " +
-          "Convert the Instagram account to Business or Creator and link it to a Page first.",
-        { platform: this.platform, code: "NO_LINKED_IG_ACCOUNT", retryable: false },
-      );
-    }
-
-    return accounts;
+    const { pages, expiresAt } = await exchangeMetaLogin(code);
+    return instagramAccountsFrom(pages, expiresAt);
   }
 
   /**
@@ -451,18 +398,30 @@ function composeCaption(caption: string, hashtags: string[]): string {
   return caption ? `${caption}\n\n${tags}` : tags;
 }
 
-interface PagesResponse {
-  data?: Array<{
-    id: string;
-    name: string;
-    access_token: string;
-    instagram_business_account?: {
-      id: string;
-      username?: string;
-      name?: string;
-      profile_picture_url?: string;
-    };
-  }>;
+
+/** Maps a Meta login's pages to the Instagram accounts hanging off them. */
+export function instagramAccountsFrom(
+  pages: MetaPage[],
+  expiresAt: Date | null,
+): ConnectedAccount[] {
+  return pages
+    .filter((page) => page.instagram)
+    .map((page) => ({
+      externalId: page.instagram!.id,
+      username: page.instagram!.username ?? null,
+      displayName: page.instagram!.name ?? null,
+      avatarUrl: page.instagram!.avatarUrl ?? null,
+      linkedPageId: page.id,
+      linkedPageName: page.name,
+      tokens: {
+        // Page tokens derived from a long-lived user token do not expire on
+        // their own, but they die with the user token, so the expiry is
+        // tracked and refreshed on the user token's schedule.
+        accessToken: page.accessToken,
+        expiresAt,
+        scopes: metaScopes(),
+      },
+    }));
 }
 
 export { composeCaption };
