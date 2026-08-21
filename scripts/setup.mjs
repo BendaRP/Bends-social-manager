@@ -75,7 +75,12 @@ async function main() {
   say("2. קובץ ההגדרות");
 
   if (existsSync(".env")) {
-    ok(".env כבר קיים — לא נוגע בו");
+    ok(".env כבר קיים — הערכים הקיימים נשמרים");
+    const added = backfillEnvKeys();
+    if (added.length > 0) {
+      ok(`נוספו הגדרות חדשות: ${added.join(", ")}`);
+      say("     (ריקות, עם ההסבר שלהן — ראה בסוף הקובץ)");
+    }
   } else {
     let env = readFileSync(".env.example", "utf8");
 
@@ -151,6 +156,55 @@ async function main() {
   say();
 
   rl.close();
+}
+
+/**
+ * Adds configuration keys that exist in .env.example but not yet in .env.
+ *
+ * .env holds the user's secrets and is never overwritten, so a `git pull` that
+ * introduces a new setting leaves existing installs without it — the option
+ * simply appears not to exist, with nothing indicating it was added. Existing
+ * values are never touched; only genuinely absent keys are appended, with the
+ * comment block that explains them.
+ */
+function backfillEnvKeys() {
+  const example = readFileSync(".env.example", "utf8");
+  const current = readFileSync(".env", "utf8");
+
+  const keyOf = (line) => /^([A-Z][A-Z0-9_]*)=/.exec(line.trim())?.[1] ?? null;
+
+  const existing = new Set(
+    current.split("\n").map(keyOf).filter(Boolean),
+  );
+
+  const lines = example.split("\n");
+  const added = [];
+  const additions = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const key = keyOf(lines[i] ?? "");
+    if (!key || existing.has(key)) continue;
+
+    // Carry the preceding comment block across, since it is what explains what
+    // the setting is for.
+    const comment = [];
+    for (let j = i - 1; j >= 0; j--) {
+      const line = lines[j] ?? "";
+      if (line.trim().startsWith("#")) comment.unshift(line);
+      else break;
+    }
+
+    additions.push("", ...comment, lines[i] ?? "");
+    added.push(key);
+  }
+
+  if (added.length === 0) return [];
+
+  writeFileSync(
+    ".env",
+    `${current.replace(/\n+$/, "")}\n\n# --- נוספו אוטומטית בהרצת npm run setup ---${additions.join("\n")}\n`,
+  );
+  return added;
 }
 
 function dockerDaemonResponds() {
