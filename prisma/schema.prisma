@@ -1,0 +1,484 @@
+// Bends Social Manager — data model.
+//
+// Design note: every timestamp is stored in UTC. Human-facing local time is
+// derived in Asia/Jerusalem (see src/lib/time.ts). The derived local fields on
+// PostFeatures are denormalised on purpose — the recommendation engine (phase 3)
+// groups by local hour and weekday constantly, and recomputing the timezone
+// conversion across the whole history on every query gets expensive fast.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+}
+
+enum AccountStatus {
+  CONNECTED
+  TOKEN_EXPIRED
+  REVOKED
+  ERROR
+}
+
+/// The manual-approval gate lives in this enum. The publish worker refuses to
+/// act on anything that has not passed through APPROVED — see
+/// src/worker/jobs/publish-post.ts.
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  PARTIALLY_PUBLISHED
+  FAILED
+  CANCELLED
+}
+
+enum TargetStatus {
+  PENDING
+  QUEUED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  SKIPPED
+}
+
+enum PostFormat {
+  SINGLE_IMAGE
+  CAROUSEL
+  VIDEO
+  REEL
+  STORY
+  TEXT
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+/// TikTok forces SELF_ONLY until the API client passes platform audit.
+enum Visibility {
+  PUBLIC
+  SELF_ONLY
+  FRIENDS
+  PRIVATE
+}
+
+// ---------------------------------------------------------------------------
+// Identity
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  approvedPosts Post[]     @relation("ApprovedBy")
+  createdPosts  Post[]     @relation("CreatedBy")
+  auditLogs     AuditLog[]
+  sessions      Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+// ---------------------------------------------------------------------------
+// Connected platform accounts
+// ---------------------------------------------------------------------------
+
+model SocialAccount {
+  id       String   @id @default(cuid())
+  platform Platform
+
+  /// Platform-side identifier: IG user id, FB page id, or TikTok open_id.
+  externalId  String
+  username    String?
+  displayName String?
+  avatarUrl   String?
+
+  /// For Instagram: the Facebook Page it is linked to. Meta requires the page
+  /// link for content publishing, and the page token is what actually authorises
+  /// the call.
+  linkedPageId   String?
+  linkedPageName String?
+
+  status AccountStatus @default(CONNECTED)
+
+  // --- Encrypted credential material -------------------------------------
+  // Ciphertext only. Produced by src/lib/crypto.ts (AES-256-GCM). The master
+  // key lives in the host's secret manager and never in the database, so a
+  // leaked database dump does not surrender the accounts.
+  accessTokenCipher  String
+  refreshTokenCipher String?
+  /// Which master key encrypted these values, so keys can be rotated without a
+  /// flag day.
+  encryptionKeyId    String  @default("v1")
+
+  tokenExpiresAt        DateTime?
+  refreshTokenExpiresAt DateTime?
+  scopes                String[]
+
+  /// Set once the TikTok API client passes audit. Until then the TikTok adapter
+  /// hard-forces SELF_ONLY regardless of what the UI requests.
+  isAudited Boolean @default(false)
+
+  lastCheckedAt DateTime?
+  lastError     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  targets         PostTarget[]
+  metricSnapshots AccountMetricSnapshot[]
+  limitSnapshots  PlatformLimitSnapshot[]
+
+  @@unique([platform, externalId])
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------------
+// Media
+// ---------------------------------------------------------------------------
+
+model MediaAsset {
+  id   String    @id @default(cuid())
+  type MediaType
+
+  /// Object key in the S3-compatible bucket.
+  storageKey String @unique
+  /// Publicly reachable URL. Meta and TikTok both fetch media from a URL we
+  /// supply rather than accepting an upload, so this cannot be a private link.
+  publicUrl  String
+
+  mimeType    String
+  sizeBytes   Int
+  width       Int?
+  height      Int?
+  /// Video duration in seconds. Null for images.
+  durationSec Float?
+  /// Stored as width/height so aspect-ratio validation is a numeric compare.
+  aspectRatio Float?
+  checksum    String?
+
+  originalFilename String?
+  createdAt        DateTime @default(now())
+
+  postMedia PostMedia[]
+
+  @@index([type])
+}
+
+// ---------------------------------------------------------------------------
+// Content
+// ---------------------------------------------------------------------------
+
+/// A single content idea. Platform-specific wording and timing live on
+/// PostTarget, so one idea can go out to three networks with three captions.
+model Post {
+  id     String     @id @default(cuid())
+  title  String?
+  format PostFormat
+  status PostStatus @default(DRAFT)
+
+  /// Shared caption. A PostTarget may override it per platform.
+  caption  String   @default("")
+  hashtags String[] @default([])
+
+  /// Free-text content category ("behind the scenes", "product", "tip"). Fed
+  /// into PostFeatures so phase 3 can compare topics, not just formats.
+  contentPillar String?
+
+  scheduledAt DateTime?
+  publishedAt DateTime?
+
+  createdById  String?
+  approvedById String?
+  approvedAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdBy  User?        @relation("CreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedBy User?        @relation("ApprovedBy", fields: [approvedById], references: [id], onDelete: SetNull)
+  media      PostMedia[]
+  targets    PostTarget[]
+
+  @@index([status, scheduledAt])
+  @@index([scheduledAt])
+}
+
+/// Ordered media for a post. Order matters: it is the carousel slide order.
+model PostMedia {
+  id       String @id @default(cuid())
+  postId   String
+  mediaId  String
+  position Int
+
+  post  Post       @relation(fields: [postId], references: [id], onDelete: Cascade)
+  media MediaAsset @relation(fields: [mediaId], references: [id], onDelete: Restrict)
+
+  @@unique([postId, position])
+  @@index([postId])
+}
+
+/// One post as it goes out to one specific account.
+model PostTarget {
+  id        String @id @default(cuid())
+  postId    String
+  accountId String
+
+  status TargetStatus @default(PENDING)
+
+  /// Per-platform overrides. Null means "use the parent Post value".
+  captionOverride  String?
+  hashtagsOverride String[]    @default([])
+  formatOverride   PostFormat?
+
+  /// Independent per-platform scheduling — the best time to post on TikTok is
+  /// rarely the best time on Instagram, and phase 3 exists to find that out.
+  scheduledAt DateTime?
+
+  requestedVisibility Visibility  @default(PUBLIC)
+  /// What the platform actually accepted. Diverges from the request when the
+  /// TikTok client is unaudited and the post is forced to SELF_ONLY.
+  effectiveVisibility Visibility?
+
+  /// Platform-side ids, kept for metric collection.
+  externalPostId  String?
+  externalMediaId String?
+  permalink       String?
+
+  publishedAt DateTime?
+  lastError   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  post     Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  account  SocialAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  features PostFeatures?
+  metrics  MetricSnapshot[]
+  attempts PublishAttempt[]
+
+  @@unique([postId, accountId])
+  @@index([status, scheduledAt])
+  @@index([externalPostId])
+}
+
+/// Every publish attempt, successful or not. This is the forensic record for
+/// "why did this post not go out at 09:00".
+model PublishAttempt {
+  id            String    @id @default(cuid())
+  targetId      String
+  attemptNumber Int
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
+  succeeded     Boolean   @default(false)
+
+  /// Platform error code and message, verbatim. Meta and TikTok both return
+  /// structured errors that are far more useful than a stringified exception.
+  errorCode    String?
+  errorMessage String?
+  /// Full request/response envelope with credentials stripped.
+  debugPayload Json?
+
+  target PostTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([targetId, attemptNumber])
+}
+
+// ---------------------------------------------------------------------------
+// Learning substrate — populated from phase 1, analysed from phase 3
+// ---------------------------------------------------------------------------
+
+/// The feature vector for one published post on one platform. Written once at
+/// publish time. Nothing reads this in phase 1; it exists so that phase 3 has
+/// months of history to learn from instead of starting from zero.
+model PostFeatures {
+  id       String @id @default(cuid())
+  targetId String @unique
+
+  platform Platform
+  format   PostFormat
+
+  // --- Timing, in the audience's local timezone (Asia/Jerusalem) ----------
+  publishedAtUtc  DateTime
+  localHour       Int // 0-23
+  localMinute     Int // 0-59
+  /// 0 = Sunday .. 6 = Saturday, matching JS getDay().
+  localDayOfWeek  Int
+  localDayOfMonth Int
+  localMonth      Int // 1-12
+  /// Israel's weekend is Friday and Saturday, not Saturday and Sunday. Getting
+  /// this wrong would systematically mislabel the two highest-leisure days.
+  isWeekend       Boolean
+  /// True when the post went out during a period the account owner marked as a
+  /// holiday, so anomalous engagement can be excluded from baselines.
+  isHoliday       Boolean  @default(false)
+
+  // --- Caption shape ------------------------------------------------------
+  captionLength   Int
+  wordCount       Int
+  hashtagCount    Int
+  hashtags        String[] @default([])
+  mentionCount    Int      @default(0)
+  emojiCount      Int      @default(0)
+  hasCallToAction Boolean  @default(false)
+  hasLink         Boolean  @default(false)
+  hasQuestion     Boolean  @default(false)
+
+  // --- Media shape --------------------------------------------------------
+  mediaCount       Int
+  videoDurationSec Float?
+  aspectRatio      Float?
+
+  contentPillar String?
+
+  /// Follower count at publish time. Reach is meaningless without it — 500
+  /// impressions is excellent at 300 followers and poor at 30,000.
+  followerCountAtPublish Int?
+
+  createdAt DateTime @default(now())
+
+  target PostTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@index([platform, localDayOfWeek, localHour])
+  @@index([platform, format])
+  @@index([publishedAtUtc])
+}
+
+/// A point-in-time reading of one post's performance.
+///
+/// Snapshots rather than a single mutable row: knowing a post reached 5,000
+/// people is useful, but knowing it reached 4,000 of them in the first hour is
+/// what actually predicts whether the format works.
+model MetricSnapshot {
+  id         String   @id @default(cuid())
+  targetId   String
+  capturedAt DateTime @default(now())
+  /// Minutes elapsed since publish. Lets phase 3 compare like-for-like across
+  /// posts published at different times.
+  ageMinutes Int
+
+  reach       Int?
+  impressions Int?
+  likes       Int?
+  comments    Int?
+  shares      Int?
+  saves       Int?
+
+  videoViews      Int?
+  watchTimeSec    Float?
+  avgWatchTimeSec Float?
+  completionRate  Float?
+
+  profileVisits Int?
+  followsGained Int?
+  linkClicks    Int?
+
+  /// Computed as (likes + comments + shares + saves) / reach. Denormalised so
+  /// dashboards can sort on it without recomputing.
+  engagementRate Float?
+
+  /// The untouched platform response. Meta and TikTok add and rename metrics
+  /// regularly; keeping the raw payload means a metric we did not model today
+  /// is still recoverable from history tomorrow.
+  raw Json?
+
+  target PostTarget @relation(fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([targetId, ageMinutes])
+  @@index([targetId, capturedAt])
+}
+
+/// Daily account-level readings, so follower growth can be attributed to posts.
+model AccountMetricSnapshot {
+  id         String   @id @default(cuid())
+  accountId  String
+  capturedAt DateTime @default(now())
+  /// Midnight-anchored local date, for one-row-per-day upserts.
+  localDate  DateTime @db.Date
+
+  followerCount  Int?
+  followingCount Int?
+  mediaCount     Int?
+
+  reach         Int?
+  impressions   Int?
+  profileVisits Int?
+
+  raw Json?
+
+  account SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, localDate])
+  @@index([accountId, capturedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Operations
+// ---------------------------------------------------------------------------
+
+/// Last known publishing limits, read back from the platform rather than
+/// hardcoded. Meta exposes content_publishing_limit per account; published
+/// third-party figures disagree with each other, so the account's own answer is
+/// the only trustworthy source.
+model PlatformLimitSnapshot {
+  id         String   @id @default(cuid())
+  accountId  String
+  capturedAt DateTime @default(now())
+
+  quotaUsage    Int?
+  quotaTotal    Int?
+  /// Rolling window the quota applies to.
+  windowSeconds Int?
+  raw           Json?
+
+  account SocialAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, capturedAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  /// "Post", "SocialAccount", etc.
+  entityType String
+  entityId   String
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}

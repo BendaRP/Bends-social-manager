@@ -1,0 +1,21 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets — never commit. Tokens live encrypted in Postgres, not in files.
+.env
+.env.local
+.env*.local
+!.env.example
+
+# Local data volumes
+.data/
+coverage/
+.DS_Store
+
+# Stray Redis dump from local runs
+dump.rdb
