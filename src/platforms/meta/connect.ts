@@ -77,16 +77,77 @@ export async function exchangeMetaLogin(code: string): Promise<MetaLoginResult> 
   // Instagram account is still a perfectly usable Facebook connection, so the
   // caller decides what to do about it.
   if (pages.length === 0) {
-    throw new PlatformError(
-      "לא נמצא אף עמוד פייסבוק בחשבון הזה. שתי סיבות אפשריות: " +
-        "(1) במסך ההרשאות של פייסבוק לא נבחר אף עמוד — יש להתחבר שוב ולוודא שהעמוד מסומן; " +
-        "(2) אינך מוגדר כמנהל של אף עמוד עסקי. " +
-        "אפשר לבדוק ב-https://www.facebook.com/pages/?category=your_pages",
-      { platform: Platform.FACEBOOK, code: "NO_PAGES_GRANTED", retryable: false },
-    );
+    throw await noPagesError(longLived.accessToken);
   }
 
   return { pages, expiresAt: longLived.expiresAt };
+}
+
+/**
+ * Builds the "no pages" error by asking Meta what it actually granted.
+ *
+ * An empty page list has several unrelated causes — the permission was
+ * declined, no page was selected during the asset-picker step, or the account
+ * administers no page at all — and they are indistinguishable from the empty
+ * list alone. Meta will say which permissions it granted and declined, so ask
+ * rather than presenting the user with a list of guesses to work through.
+ */
+async function noPagesError(accessToken: string): Promise<PlatformError> {
+  const granted: string[] = [];
+  const declined: string[] = [];
+  let loginName: string | null = null;
+
+  try {
+    const permissions = await graphGet<{
+      data?: Array<{ permission: string; status: string }>;
+    }>(Platform.FACEBOOK, "me/permissions", { access_token: accessToken });
+
+    for (const entry of permissions.data ?? []) {
+      if (entry.status === "granted") granted.push(entry.permission);
+      else declined.push(entry.permission);
+    }
+  } catch {
+    // Diagnostics are best-effort; never let them replace the real error.
+  }
+
+  try {
+    const me = await graphGet<{ name?: string }>(Platform.FACEBOOK, "me", {
+      fields: "name",
+      access_token: accessToken,
+    });
+    loginName = me.name ?? null;
+  } catch {
+    // Ignore.
+  }
+
+  const lines = ["לא נמצא אף עמוד פייסבוק בחשבון שאיתו התחברת."];
+  if (loginName) lines.push(`התחברת כ: ${loginName}`);
+
+  if (!granted.includes("pages_show_list")) {
+    // This is decisive: without the permission Meta returns an empty list no
+    // matter how many pages the account administers.
+    lines.push(
+      "הסיבה: ההרשאה pages_show_list לא אושרה, ובלעדיה Meta מחזירה רשימה ריקה " +
+        "גם אם יש לך עמודים. יש להתחבר שוב ולאשר את הגישה לעמודים.",
+    );
+  } else {
+    lines.push(
+      "ההרשאה pages_show_list כן אושרה, כלומר Meta באמת לא רואה עמודים בחשבון הזה. " +
+        "שתי אפשרויות: (1) במסך בחירת העמודים לא סומן אף עמוד — להתחבר שוב ולסמן; " +
+        "(2) אין לך עמוד עסקי, או שאינך מנהל שלו. " +
+        "לבדיקה: https://www.facebook.com/pages/?category=your_pages",
+    );
+  }
+
+  if (declined.length > 0) lines.push(`הרשאות שנדחו: ${declined.join(", ")}`);
+  if (granted.length > 0) lines.push(`הרשאות שאושרו: ${granted.join(", ")}`);
+
+  return new PlatformError(lines.join(" | "), {
+    platform: Platform.FACEBOOK,
+    code: "NO_PAGES_GRANTED",
+    retryable: false,
+    raw: { granted, declined },
+  });
 }
 
 interface PagesResponse {
