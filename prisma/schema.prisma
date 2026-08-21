@@ -482,3 +482,77 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
 }
+
+// ---------------------------------------------------------------------------
+// Brand voice (phase 4)
+// ---------------------------------------------------------------------------
+
+/// The brand definition the content generator writes from.
+///
+/// Kept as data rather than baked into a prompt in code so it can be edited
+/// without a deploy, and so every generation is traceable to the exact voice
+/// that produced it. A single row; `id` is fixed.
+model BrandProfile {
+  id String @id @default("default")
+
+  businessName String
+  /// What the business actually does, in the owner's own words.
+  description  String
+  audience     String
+
+  /// Tone descriptors, e.g. "חם", "ישיר", "משעשע".
+  toneWords  String[] @default([])
+  /// Free-text voice guidance that does not fit the structured fields.
+  voiceNotes String?
+
+  /// Vocabulary rules. `avoidWords` matters more than it looks — it is how a
+  /// brand stops the generator reaching for the clichés of its own industry.
+  preferWords String[] @default([])
+  avoidWords  String[] @default([])
+
+  /// Recurring content categories, reused as the PostFeatures contentPillar so
+  /// phase 3 can compare their performance.
+  contentPillars String[] @default([])
+
+  /// Primary language for generated copy.
+  language String @default("he")
+
+  // --- Visual identity, used by the carousel templates ------------------
+  colorPrimary    String  @default("#2D2A32")
+  colorAccent     String  @default("#E4572E")
+  colorBackground String  @default("#FAF7F2")
+  colorText       String  @default("#2D2A32")
+  logoUrl         String?
+
+  /// Emoji are divisive and brand-specific; make it an explicit choice rather
+  /// than a habit of the model.
+  useEmoji Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  generations Generation[]
+}
+
+/// A record of every AI generation: what was asked, what came back, what it
+/// cost. Kept so drafts can be traced to their prompt, and so token spend is
+/// visible rather than a surprise on the bill.
+model Generation {
+  id      String @id @default(cuid())
+  brandId String
+
+  kind   String
+  brief  String
+  model  String
+  /// Full structured result, before any human editing.
+  output Json
+
+  inputTokens  Int?
+  outputTokens Int?
+
+  createdAt DateTime @default(now())
+
+  brand BrandProfile @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@index([kind, createdAt])
+}

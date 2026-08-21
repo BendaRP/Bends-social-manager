@@ -11,3 +11,9 @@ process.env.DATABASE_URL ??=
 process.env.REDIS_URL ??= "redis://localhost:6379";
 process.env.AUDIENCE_TIMEZONE ??= "Asia/Jerusalem";
 process.env.REQUIRE_MANUAL_APPROVAL ??= "true";
+
+// Point the renderer at whichever Chromium this machine has. Playwright resolves
+// its own download when this is unset, so CI and dev boxes need nothing here.
+process.env.CHROMIUM_PATH ??= process.env.PLAYWRIGHT_BROWSERS_PATH
+  ? `${process.env.PLAYWRIGHT_BROWSERS_PATH}/chromium-1194/chrome-linux/chrome`
+  : "";

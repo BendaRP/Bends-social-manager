@@ -1,3 +1,5 @@
+// Must come first: populates process.env before anything reads it.
+import "../src/lib/load-env";
 import { createInterface } from "node:readline/promises";
 import { randomBytes } from "node:crypto";
 import { prisma } from "../src/server/db";

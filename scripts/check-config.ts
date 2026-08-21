@@ -1,3 +1,5 @@
+// Must come first: populates process.env before anything reads it.
+import "../src/lib/load-env";
 import { getEnv } from "../src/lib/env";
 import { prisma } from "../src/server/db";
 import { getRedis } from "../src/server/redis";

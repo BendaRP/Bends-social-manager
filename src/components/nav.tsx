@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CalendarDays, CheckCircle2, LayoutDashboard, Link2, PenSquare, LogOut } from "lucide-react";
+import { CalendarDays, CheckCircle2, LayoutDashboard, Link2, PenSquare, LogOut, Sparkles } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 const LINKS = [
@@ -10,6 +10,7 @@ const LINKS = [
   { href: "/compose", label: "פוסט חדש", icon: PenSquare },
   { href: "/approvals", label: "ממתין לאישור", icon: CheckCircle2 },
   { href: "/calendar", label: "יומן תוכן", icon: CalendarDays },
+  { href: "/brand", label: "זהות המותג", icon: Sparkles },
   { href: "/connections", label: "חשבונות מחוברים", icon: Link2 },
 ] as const;
 

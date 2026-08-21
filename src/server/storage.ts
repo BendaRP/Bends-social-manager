@@ -90,6 +90,37 @@ export function publicUrlFor(storageKey: string): string {
   return `${base}/${storageKey}`;
 }
 
+/**
+ * Uploads bytes the server itself produced.
+ *
+ * Distinct from the presigned browser upload: rendered carousel slides never
+ * exist on the client, so there is no browser to presign for.
+ */
+export async function uploadObject(options: {
+  bytes: Buffer;
+  contentType: string;
+  extension: string;
+}): Promise<{ storageKey: string; publicUrl: string }> {
+  const env = getEnv();
+  const now = new Date();
+  const storageKey = [
+    "generated",
+    `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`,
+    `${randomUUID()}.${options.extension}`,
+  ].join("/");
+
+  await getClient().send(
+    new PutObjectCommand({
+      Bucket: env.S3_BUCKET,
+      Key: storageKey,
+      Body: options.bytes,
+      ContentType: options.contentType,
+    }),
+  );
+
+  return { storageKey, publicUrl: publicUrlFor(storageKey) };
+}
+
 export async function deleteObject(storageKey: string): Promise<void> {
   const env = getEnv();
   await getClient().send(

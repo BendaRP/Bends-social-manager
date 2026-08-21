@@ -19,6 +19,10 @@ const schema = z.object({
   META_APP_SECRET: z.string().default(""),
   META_GRAPH_VERSION: z.string().default("v23.0"),
 
+  ANTHROPIC_API_KEY: z.string().default(""),
+  /// Optional override for the Chromium used to render carousels.
+  CHROMIUM_PATH: z.string().default(""),
+
   TIKTOK_CLIENT_KEY: z.string().default(""),
   TIKTOK_CLIENT_SECRET: z.string().default(""),
 

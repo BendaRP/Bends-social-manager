@@ -1,3 +1,5 @@
+// Must come first: populates process.env before anything reads it.
+import "@/lib/load-env";
 import { Worker } from "bullmq";
 import { getBullConnection } from "@/server/redis";
 import { getEnv } from "@/lib/env";

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Platform, PostFormat } from "@prisma/client";
 import { Card, Alert, Ltr } from "@/components/ui";
 import { MediaUploader, type UploadedMedia } from "./media-uploader";
+import { AiPanel, type AiResult } from "./ai-panel";
 
 interface AccountOption {
   id: string;
@@ -72,6 +73,33 @@ export function Composer({ accounts }: { accounts: AccountOption[] }) {
     (a) => a.platform === Platform.TIKTOK && !a.isAudited,
   );
 
+  /**
+   * Fills the composer from a generated draft.
+   *
+   * Written into the same state the manual fields use, so the result is a
+   * starting point to edit rather than a black box — and so it still passes
+   * through validation, saving, and the approval gate unchanged.
+   */
+  function applyAiResult(result: AiResult) {
+    setFormat(result.format);
+    setTitle(result.title);
+    setCaption(result.caption);
+    setHashtagText(result.hashtags.join(" "));
+    setContentPillar(result.contentPillar);
+    if (result.media.length > 0) setMedia(result.media);
+
+    const nextOverrides: Record<string, string> = {};
+    for (const account of accounts) {
+      const generated = result.perPlatform[account.platform];
+      // Only an actually different caption is worth carrying as an override;
+      // duplicating the shared one just clutters the form.
+      if (generated && generated.caption !== result.caption) {
+        nextOverrides[account.id] = generated.caption;
+      }
+    }
+    setOverrides(nextOverrides);
+  }
+
   function toggleAccount(id: string) {
     setSelected((current) =>
       current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
@@ -117,6 +145,11 @@ export function Composer({ accounts }: { accounts: AccountOption[] }) {
 
   return (
     <form onSubmit={submit} className="space-y-5">
+      <AiPanel
+        selectedPlatforms={selectedAccounts.map((a) => a.platform)}
+        onResult={applyAiResult}
+      />
+
       <Card>
         <label className="mb-2 block text-sm font-medium text-ink">פורמט</label>
         <div className="flex flex-wrap gap-2">
