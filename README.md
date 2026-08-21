@@ -3,7 +3,15 @@
 מערכת לניהול הנוכחות העסקית באינסטגרם, בפייסבוק ובטיקטוק: יצירת תוכן, תזמון,
 פרסום עם אישור ידני, ואיסוף נתוני ביצועים.
 
-**מדריך ההקמה המלא: [`docs/SETUP.md`](docs/SETUP.md)**
+**להתחלה מהירה על המחשב שלך: [`docs/LOCAL.md`](docs/LOCAL.md)**
+**מדריך ההקמה המלא של כל הפלטפורמות: [`docs/SETUP.md`](docs/SETUP.md)**
+
+```bash
+git clone https://github.com/BendaRP/Bends-social-manager.git
+cd Bends-social-manager
+npm run setup      # מייצר מפתחות, מתקין, מקים בסיס נתונים, יוצר משתמש
+npm run dev:all    # מפעיל את הממשק ואת תהליך הפרסום יחד
+```
 
 ---
 

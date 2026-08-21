@@ -15,7 +15,9 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "create-owner": "tsx scripts/create-owner.ts",
-    "check": "tsx scripts/check-config.ts"
+    "check": "tsx scripts/check-config.ts",
+    "setup": "node scripts/setup.mjs",
+    "dev:all": "concurrently -n app,worker -c cyan,magenta \"next dev\" \"tsx watch src/worker/index.ts\""
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1115.0",
@@ -42,6 +44,7 @@
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
+    "concurrently": "^10.0.5",
     "eslint": "^9.39.5",
     "eslint-config-next": "^15.5.23",
     "postcss": "^8.5.26",
