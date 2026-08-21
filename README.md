@@ -9,7 +9,8 @@
 ```bash
 git clone https://github.com/BendaRP/Bends-social-manager.git
 cd Bends-social-manager
-npm run setup      # מייצר מפתחות, מתקין, מקים בסיס נתונים, יוצר משתמש
+npm run setup      # מייצר מפתחות, מתקין, מחבר בסיס נתונים, יוצר משתמש
+                   # (עובד עם Docker מקומי או עם בסיס נתונים בענן — לבחירתך)
 npm run dev:all    # מפעיל את הממשק ואת תהליך הפרסום יחד
 ```
 
