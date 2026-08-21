@@ -32,7 +32,35 @@ export const META_SCOPES = [
 
 export type MetaScope = (typeof META_SCOPES)[number];
 
-export const META_SCOPE_STRING = META_SCOPES.join(",");
+/**
+ * The scopes actually requested at login.
+ *
+ * Overridable via the META_SCOPES environment variable because Meta gates
+ * permissions behind per-app "use case" configuration, and an app that has not
+ * enabled a given permission rejects the whole login with "Invalid Scopes"
+ * rather than ignoring the one it does not recognise. Being able to narrow the
+ * list without a code change makes it possible to connect with what the app
+ * already has, confirm the rest of the flow works, and widen it as permissions
+ * are switched on in the dashboard.
+ *
+ * Anything absent here simply disables the feature that needed it — publishing
+ * without `pages_manage_posts`, insights without `instagram_manage_insights` —
+ * so a narrowed list degrades the app rather than breaking it.
+ */
+export function metaScopes(): string[] {
+  const override = process.env.META_SCOPES?.trim();
+  if (override) {
+    return override
+      .split(",")
+      .map((scope) => scope.trim())
+      .filter(Boolean);
+  }
+  return [...META_SCOPES];
+}
+
+export function metaScopeString(): string {
+  return metaScopes().join(",");
+}
 
 /**
  * Why each scope is requested, shown in the connection UI so the permissions

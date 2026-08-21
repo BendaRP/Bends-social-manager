@@ -21,7 +21,7 @@ import {
   graphPost,
   waitForContainer,
 } from "./client";
-import { META_SCOPES, META_SCOPE_STRING } from "./scopes";
+import { metaScopes, metaScopeString } from "./scopes";
 
 /**
  * Instagram Business/Creator publishing via the Meta Graph API.
@@ -48,7 +48,7 @@ export class InstagramAdapter implements PlatformAdapter {
     url.searchParams.set("client_id", env.META_APP_ID);
     url.searchParams.set("redirect_uri", `${env.APP_URL}/api/auth/meta/callback`);
     url.searchParams.set("state", state);
-    url.searchParams.set("scope", META_SCOPE_STRING);
+    url.searchParams.set("scope", metaScopeString());
     url.searchParams.set("response_type", "code");
     return url.toString();
   }
@@ -103,7 +103,7 @@ export class InstagramAdapter implements PlatformAdapter {
           // tracked and refreshed on the user token's schedule.
           accessToken: page.access_token,
           expiresAt: longLived.expiresAt,
-          scopes: [...META_SCOPES],
+          scopes: metaScopes(),
         },
       });
     }

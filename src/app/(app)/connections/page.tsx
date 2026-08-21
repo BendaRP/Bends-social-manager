@@ -1,7 +1,7 @@
 import { AccountStatus, Platform } from "@prisma/client";
 import { prisma } from "@/server/db";
 import { Card, Alert, PlatformBadge, Ltr } from "@/components/ui";
-import { SCOPE_EXPLANATIONS, META_SCOPES } from "@/platforms/meta/scopes";
+import { SCOPE_EXPLANATIONS, metaScopes, type MetaScope } from "@/platforms/meta/scopes";
 import { formatAudience } from "@/lib/time";
 import { getEnv } from "@/lib/env";
 import { DisconnectButton } from "./disconnect-button";
@@ -70,10 +70,12 @@ export default async function ConnectionsPage({
             אילו הרשאות המערכת מבקשת ולמה
           </summary>
           <ul className="mt-3 space-y-2 text-sm">
-            {META_SCOPES.map((scope) => (
+            {metaScopes().map((scope) => (
               <li key={scope} className="flex flex-col gap-0.5">
                 <code className="text-xs text-brand" dir="ltr">{scope}</code>
-                <span className="text-ink-muted">{SCOPE_EXPLANATIONS[scope]}</span>
+                <span className="text-ink-muted">
+                  {SCOPE_EXPLANATIONS[scope as MetaScope] ?? "הרשאה מותאמת אישית"}
+                </span>
               </li>
             ))}
           </ul>

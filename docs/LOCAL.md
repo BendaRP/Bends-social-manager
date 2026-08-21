@@ -188,6 +188,19 @@ APP_URL="https://הכתובת-שקיבלת.trycloudflare.com"
 **פוסט מתוזמן לא פורסם**
 לוודא ש-`npm run dev:all` רץ (‏שני תהליכים, לא רק אחד), ושהמחשב לא נכנס לשינה.
 
+**‏`Invalid Scopes: instagram_content_publish, ...` בעת החיבור**
+האפליקציה ב-Meta עדיין לא הפעילה את ההרשאות האלה. זו הגדרה בדשבורד, לא באג.
+ב-<https://developers.facebook.com/apps> → האפליקציה שלך → **Use cases** →
+ליד כל Use case ללחוץ **Customize** → לשונית **Permissions** → **Add** ליד
+ההרשאה החסרה. אחרי ההוספה לנסות לחבר שוב.
+
+כדי להתקדם בינתיים אפשר לצמצם זמנית את רשימת ההרשאות ב-`.env`:
+```
+META_SCOPES="instagram_basic,pages_show_list,pages_read_engagement"
+```
+זה מאפשר להשלים את החיבור ולוודא שהכל עובד. **בהרשאות המצומצמות עדיין אי אפשר
+לפרסם** — כשההרשאות המלאות יופעלו בדשבורד, למחוק את השורה ולהתחבר מחדש.
+
 **‏"No Instagram professional account is linked to any Facebook Page"**
 חשבון האינסטגרם אינו Business/Creator או אינו מקושר לעמוד. ראה `SETUP.md` שלב א'.
 

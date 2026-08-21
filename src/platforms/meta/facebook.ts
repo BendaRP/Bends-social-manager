@@ -20,7 +20,7 @@ import {
   graphGet,
   graphPost,
 } from "./client";
-import { META_SCOPES, META_SCOPE_STRING } from "./scopes";
+import { metaScopes, metaScopeString } from "./scopes";
 import { composeCaption } from "./instagram";
 
 /**
@@ -48,7 +48,7 @@ export class FacebookAdapter implements PlatformAdapter {
     url.searchParams.set("client_id", env.META_APP_ID);
     url.searchParams.set("redirect_uri", `${env.APP_URL}/api/auth/meta/callback`);
     url.searchParams.set("state", state);
-    url.searchParams.set("scope", META_SCOPE_STRING);
+    url.searchParams.set("scope", metaScopeString());
     url.searchParams.set("response_type", "code");
     return url.toString();
   }
@@ -90,7 +90,7 @@ export class FacebookAdapter implements PlatformAdapter {
       tokens: {
         accessToken: page.access_token,
         expiresAt: longLived.expiresAt,
-        scopes: [...META_SCOPES],
+        scopes: metaScopes(),
       },
     }));
   }
